@@ -26,9 +26,10 @@ export const cloudBackend = {
   kind: 'cloud',
   async login(email, password, register) {
     const c = await sb();
-    const r = register ? await c.auth.signUp({ email, password }) : await c.auth.signInWithPassword({ email, password });
+    // the confirmation e-mail links back to this page
+    const r = register ? await c.auth.signUp({ email, password, options: { emailRedirectTo: location.origin + location.pathname } }) : await c.auth.signInWithPassword({ email, password });
     err(r.error);
-    if (!r.data.session) throw new Error('Bitte bestätige zuerst deine E-Mail-Adresse (Link im Postfach) und melde dich dann an.');
+    if (!r.data.session) throw new Error('Fast geschafft! Wir haben dir eine E-Mail geschickt – bestätige den Link darin und melde dich dann hier an.');
     return { username: r.data.user.email, token: 'supabase' };
   },
   async logout() { await (await sb()).auth.signOut(); },
