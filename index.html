@@ -1,0 +1,321 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no" />
+  <meta name="theme-color" content="#000000" />
+  <title>Keyflow – Piano tutorials for any song</title>
+  <link rel="manifest" href="manifest.webmanifest" />
+  <link rel="icon" href="icon.svg" type="image/svg+xml" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="css/style.css" />
+</head>
+<body>
+  <!-- ================= LIBRARY ================= -->
+  <section id="view-library" class="view">
+    <header class="lib-head">
+      <div class="lib-top">
+        <div class="brand"><span class="logo">◆</span> Keyflow <span class="tag">PIANO</span></div>
+        <button id="accountBtn" class="account-btn"><span id="syncDot" class="sync-dot"></span><span id="accountLabel">Sign in</span></button>
+      </div>
+      <h1>My songs</h1>
+    </header>
+    <div class="search-row">
+      <label class="search">
+        <svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="M20 20l-4-4"/></svg>
+        <input id="searchInput" type="search" placeholder="Search music" autocomplete="off" />
+      </label>
+      <button id="sortBtn" class="round" aria-label="Sort"><svg viewBox="0 0 24 24"><path d="M4 7h16M7 12h10M10 17h4"/></svg></button>
+      <div id="sortMenu" class="menu hidden">
+        <button data-sort="recent">Recently added</button>
+        <button data-sort="played">Recently played</button>
+        <button data-sort="title">Title A–Z</button>
+      </div>
+    </div>
+    <h2>All transcriptions</h2>
+    <ul id="songList" class="song-list"></ul>
+    <p id="emptyLib" class="empty hidden">No songs yet. Tap <b>+</b> to transcribe your first song.</p>
+    <p class="credits-link"><button id="creditsBtn" class="link small">Credits &amp; Lizenzen</button></p>
+    <button id="addBtn" class="fab" aria-label="New song"><svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg></button>
+  </section>
+
+  <!-- ================= CREATE ================= -->
+  <section id="view-create" class="view hidden">
+    <div class="aurora"></div>
+    <header class="create-head">
+      <button id="createBack" class="round ghost" aria-label="Back"><svg viewBox="0 0 24 24"><path d="M19 12H5M11 6l-6 6 6 6"/></svg></button>
+      <button id="skipBtn" class="link">Skip</button>
+    </header>
+    <p class="prompt">What song do you want to learn?</p>
+    <div class="orb"></div>
+    <div id="aiBar" class="ai-bar"></div>
+    <div id="createResults" class="create-results"></div>
+    <div class="create-bottom">
+      <p class="muted small">Not sure? Explore a genre</p>
+      <div id="genreChips" class="chips"></div>
+      <form id="askForm" class="ask">
+        <button type="button" id="plusBtn" class="ask-btn" aria-label="Add file"><svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg></button>
+        <input id="askInput" placeholder="Frag den Coach, Songname oder Link …" autocomplete="off" />
+        <button type="button" id="recBtn" class="ask-btn" aria-label="Record"><svg viewBox="0 0 24 24"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/></svg></button>
+        <button type="submit" class="send" aria-label="Send"><svg viewBox="0 0 24 24"><path d="M12 19V5M6 11l6-6 6 6"/></svg></button>
+      </form>
+      <div id="plusMenu" class="menu up hidden">
+        <button data-act="audio"><img class="ic" src="icons/ic-note.webp" alt="" draggable="false"> Upload audio or video</button>
+        <button data-act="midi"><img class="ic" src="icons/ic-keyboard.webp" alt="" draggable="false"> Import MIDI file</button>
+        <button data-act="record"><img class="ic" src="icons/ic-mic.webp" alt="" draggable="false"> Record with microphone</button>
+      </div>
+      <details class="advanced">
+        <summary>Transcription settings</summary>
+        <label>Note sensitivity <input id="optSens" type="range" min="0" max="1" step="0.05" value="0.5" /></label>
+        <label>AI model <select id="optModel"><option value="basicpitch">Basic Pitch (any instrument)</option><option value="piano">Piano model – Onsets &amp; Frames</option><option value="both" selected>Both combined (best)</option><option value="muscriptor">MuScriptor (multi-instrument, server)</option><option value="transkun">Transkun – Klavier, sehr genau (Server)</option></select></label>
+        <label id="msRow" class="hidden">MuScriptor size <select id="optMsSize"><option value="small" selected>small – fast (CPU ok)</option><option value="medium">medium – balanced</option><option value="large">large – best (GPU)</option></select></label>
+        <label id="msQRow" class="hidden">Snap notes to beat grid <input id="optQuantize" type="checkbox" checked /></label>
+        <label>Demucs stem separation (server) <input id="optDemucs" type="checkbox" /></label>
+        <label>Arrangement <select id="optMode"><option value="piano" selected>Piano arrangement</option><option value="easy">Easy (melody + bass)</option><option value="full">Full detail (solo piano recordings)</option></select></label>
+        <label>Remove drums before transcribing <input id="optDrums" type="checkbox" checked /></label>
+        <label>Song names: search <select id="optKind"><option value="cover" selected>piano covers (most accurate)</option><option value="original">original song</option></select></label>
+        <label>Split hands at <select id="optSplit"><option value="55">G3</option><option value="57">A3</option><option value="60" selected>C4 (middle C)</option><option value="62">D4</option><option value="64">E4</option></select></label>
+      </details>
+      <input id="fileInput" type="file" accept="audio/*,video/*,.mid,.midi,.mp3,.wav,.m4a,.ogg,.flac,.webm,.mp4" hidden />
+    </div>
+  </section>
+
+  <!-- ================= PLAYER ================= -->
+  <section id="view-player" class="view hidden">
+    <canvas id="stage"></canvas>
+    <div id="progress" class="progress"><div id="progressFill"></div><div id="loopBand" class="loop-band hidden"></div></div>
+    <div id="hud" class="hud">
+      <div class="hud-left">
+        <button id="exitBtn" class="glass icon" aria-label="Back"><svg viewBox="0 0 24 24"><path d="M19 12H5M11 6l-6 6 6 6"/></svg></button>
+        <button id="settingsBtn" class="glass icon" aria-label="Settings"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg></button>
+        <button id="speedBtn" class="glass pill">Speed <b id="speedVal">100%</b></button>
+        <button id="levelBtn" class="glass pill">Level <b id="levelVal">Original</b></button>
+        <div class="seg glass">
+          <button id="modeWait" class="seg-btn">Wait</button>
+          <button id="modePlay" class="seg-btn active">Play-Along</button>
+        </div>
+      </div>
+      <div class="hud-right">
+        <span id="scoreChip" class="glass pill score">0 ✓</span>
+        <button id="practiceBtn" class="glass pill" aria-label="Practice"><img class="ic" src="icons/ic-practice.webp" alt="" draggable="false"> Practice</button>
+        <button id="soundBtn" class="glass icon" aria-label="Sound"><img class="ic lg" src="icons/ic-sound.webp" alt="" draggable="false"></button>
+        <button id="inputBtn" class="glass icon" aria-label="Input"><svg viewBox="0 0 24 24"><rect x="2" y="7" width="20" height="11" rx="2"/><path d="M6 7v6M10 7v6M14 7v6M18 7v6"/></svg></button>
+        <div id="handSeg" class="seg glass hand-seg" role="radiogroup" aria-label="Hände">
+          <button class="seg-btn" data-hands="L" title="Nur linke Hand"><img class="ic hand-ic" src="icons/ic-hand-left.webp" alt="" draggable="false"><i>L</i></button>
+          <button class="seg-btn" data-hands="both" title="Beide Hände">Beide</button>
+          <button class="seg-btn" data-hands="R" title="Nur rechte Hand"><img class="ic hand-ic" src="icons/ic-hand-right.webp" alt="" draggable="false"><i>R</i></button>
+          <button class="seg-btn" data-hands="none" title="Zuhören – beide Hände spielen automatisch">Hören</button>
+        </div>
+      </div>
+      <div id="speedMenu" class="panel speed-panel hidden">
+        <p class="panel-title">PLAYBACK SPEED</p>
+        <div class="speed-opts"></div>
+      </div>
+      <div id="inputMenu" class="panel input-panel hidden">
+        <p class="panel-title">PLAY WITH ANY PIANO</p>
+        <button id="midiBtn" class="row-btn"><span><img class="ic" src="icons/ic-keyboard.webp" alt="" draggable="false"> Connect MIDI keyboard</span> <span id="midiStatus" class="muted"></span></button>
+        <button id="micBtn" class="row-btn"><span><img class="ic" src="icons/ic-mic.webp" alt="" draggable="false"> Listen via microphone</span> <span id="micStatus" class="muted">off</span></button>
+        <label class="row">Key lights on my piano <select id="setLightProto"></select></label>
+        <label class="row">Light keys ahead <select id="setLightAhead"><option value="now">only when it's time</option><option value="ahead" selected>next notes in advance</option></select></label>
+        <label class="row">Silent lights (channel modes) <input id="setSilentLights" type="checkbox" checked /></label>
+        <div class="row btns"><button id="testLightsBtn" class="glass pill"><img class="ic" src="icons/ic-light.webp" alt="" draggable="false"> Test lights</button><span id="sysexStatus" class="muted small"></span></div>
+        <label class="row">Mic sensitivity <input id="micSens" type="range" min="0" max="1" step="0.05" value="0.5" /></label>
+        <p class="muted small">Tip: use headphones or mute the song when using the microphone. Computer keys: A W S E D F T G Y H U J K (Z / X = octave).</p>
+      </div>
+      <div id="levelPanel" class="panel level-panel hidden">
+        <p class="panel-title">SCHWIERIGKEIT</p>
+        <p id="levelRating" class="small"></p>
+        <div id="levelOpts" class="speed-opts"></div>
+        <p class="muted small">Leicht: nur Melodie + Bass, keine schnellen Läufe · Mittel: Melodie + eine Begleitstimme · Schwer: bis zu 3 Töne pro Hand · Original: alles</p>
+        <label class="row">Andere Hand <select id="setOtherHand"><option value="auto">spielt automatisch</option><option value="mute">stumm (sichtbar)</option><option value="hide">ausblenden</option></select></label>
+      </div>
+      <div id="soundPanel" class="panel sound-panel hidden">
+        <p class="panel-title">SOUND &amp; INSTRUMENTE</p>
+        <label class="row">Sound-Bibliothek <select id="sndBank"></select></label>
+        <div id="sndPresets">
+          <label class="row">Song – rechte Hand <select id="sndR" class="snd-preset" data-role="R"></select></label>
+          <label class="row">Song – linke Hand <select id="sndL" class="snd-preset" data-role="L"></select></label>
+          <label class="row">Meine Tasten <select id="sndUser" class="snd-preset" data-role="user"></select></label>
+        </div>
+        <p id="sndInfo" class="muted small"></p>
+        <div class="row btns">
+          <button id="sndImport" class="glass pill"><img class="ic" src="icons/ic-import.webp" alt="" draggable="false"> SoundFont importieren</button>
+          <button id="sndImportDir" class="glass pill"><img class="ic" src="icons/ic-folder.webp" alt="" draggable="false"> SFZ-Ordner</button>
+        </div>
+        <p class="muted small">SF2 · SF3 · SFOGG · DLS · SFZ (mit Samples, als Ordner oder ZIP) · SYX (DX7-Bänke &amp; SysEx-Befehle) · ZIP</p>
+        <div class="row btns">
+          <button id="sndImportSyx" class="glass pill"><img class="ic" src="icons/ic-synth.webp" alt="" draggable="false"> Eigene .syx-Presets</button>
+          <button id="sndExportSyx" class="glass pill hidden"><img class="ic" src="icons/ic-export.webp" alt="" draggable="false"> Als .syx exportieren</button>
+        </div>
+        <div id="customList" class="snd-list hidden"></div>
+        <p class="panel-title" style="margin-top:14px">MIDI-AUSGANG · VST3 / DAW / HARDWARE</p>
+        <label class="row">Ausgang <select id="moDevice"><option value="off">Aus</option></select></label>
+        <div class="row btns"><button id="moScan" class="glass pill"><img class="ic" src="icons/ic-keyboard.webp" alt="" draggable="false"> MIDI-Ausgänge suchen</button></div>
+        <div id="moOpts">
+          <label class="row">Song – rechte Hand <span class="mo-ch"><input id="moR" type="checkbox" checked /> Kanal <select id="moRch"><option value="0">1</option><option value="1">2</option><option value="2">3</option><option value="3">4</option><option value="4">5</option><option value="5">6</option><option value="6">7</option><option value="7">8</option><option value="8">9</option><option value="9">10</option><option value="10">11</option><option value="11">12</option><option value="12">13</option><option value="13">14</option><option value="14">15</option><option value="15">16</option></select></span></label>
+          <label class="row">Song – linke Hand <span class="mo-ch"><input id="moL" type="checkbox" checked /> Kanal <select id="moLch"><option value="0">1</option><option value="1">2</option><option value="2">3</option><option value="3">4</option><option value="4">5</option><option value="5">6</option><option value="6">7</option><option value="7">8</option><option value="8">9</option><option value="9">10</option><option value="10">11</option><option value="11">12</option><option value="12">13</option><option value="13">14</option><option value="14">15</option><option value="15">16</option></select></span></label>
+          <label class="row">Meine Tasten <span class="mo-ch"><input id="moU" type="checkbox" /> Kanal <select id="moUch"><option value="0">1</option><option value="1">2</option><option value="2">3</option><option value="3">4</option><option value="4">5</option><option value="5">6</option><option value="6">7</option><option value="7">8</option><option value="8">9</option><option value="9">10</option><option value="10">11</option><option value="11">12</option><option value="12">13</option><option value="13">14</option><option value="14">15</option><option value="15">16</option></select></span></label>
+          <label class="row">Instrument senden <select id="moProg"></select></label>
+          <label class="row">Nur extern hören (interne Klänge stumm) <input id="moExcl" type="checkbox" /></label>
+        </div>
+        <details class="mo-help"><summary class="muted small">So spielst du mit VST3-Plugins</summary>
+          <p class="muted small">VST3-Plugins laufen in einem Host-Programm auf dem PC/Mac (z.&nbsp;B. Reaper, Cakewalk, Ableton, FL Studio oder der kostenlose Plugin-Host Carla). Keyflow schickt die Noten per MIDI dorthin:</p>
+          <p class="muted small">1. Keyflow auf dem PC starten (<code>node server.js</code>) und in Chrome öffnen.<br>2. Virtuelles MIDI-Kabel: Windows → <b>loopMIDI</b>, Mac → <b>IAC-Treiber</b> (Audio-MIDI-Setup), Linux → Carla/ALSA.<br>3. Im Host eine Spur mit deinem VST3-Plugin anlegen, MIDI-Eingang = das virtuelle Kabel, Aufnahme-/Monitor-Schalter an.<br>4. Hier als Ausgang das Kabel wählen, Kanäle zuordnen, „Nur extern hören“ an.</p>
+          <p class="muted small">Am Handy kannst du so auch die eingebauten Klänge deines MIDI-Pianos (z.&nbsp;B. MEP-4000) oder einen Hardware-Synth ansteuern.</p>
+        </details>
+        <input id="syxFile" type="file" accept=".syx,.zip" multiple hidden />
+        <div id="sndList" class="snd-list"></div>
+        <div id="syxList" class="snd-list"></div>
+        <input id="sndFile" type="file" multiple hidden />
+        <input id="sndDir" type="file" webkitdirectory multiple hidden />
+      </div>
+      <div id="practicePanel" class="panel practice-panel hidden">
+        <p class="panel-title">PRACTICE BY SECTION</p>
+        <label class="row">Auto tempo (start 50 %, +10 % per clean pass) <input id="setAutoTempo" type="checkbox" checked /></label>
+        <label class="row">Clean pass needs <select id="setPassAcc"><option value="80">80 %</option><option value="90" selected>90 %</option><option value="100">100 %</option></select></label>
+        <div id="sectionList" class="section-list"></div>
+        <div class="row btns"><button id="practiceStop" class="glass pill">✕ Stop section practice</button></div>
+      </div>
+      <div id="settingsPanel" class="panel settings-panel hidden">
+        <p class="panel-title">SETTINGS</p>
+        <label class="row">Note labels <select id="setLabels"><option value="letters">C D E</option><option value="solfege">Do Re Mi</option><option value="fingers">Fingernummern 1–5</option><option value="both">Note + Finger (C 3)</option><option value="none">Off</option></select></label>
+        <label class="row">Finger-Farben (Daumen … kleiner Finger) <input id="setFingerColors" type="checkbox" checked /></label>
+        <label class="row">Hand-Diagramm über der Tastatur <input id="setHandDiagram" type="checkbox" checked /></label>
+        <label class="row">Fingersatz bearbeiten (pausiert Note antippen) <input id="setEditFingers" type="checkbox" /></label>
+        <label class="row">Keyboard <select id="setKeyboard"><option value="88">88 keys (full piano)</option><option value="61">61 keys</option><option value="auto">Fit to song</option></select></label>
+        <label class="row">Colors <select id="setColors"><option value="rainbow">Rainbow (per note)</option><option value="hands">Blue / teal (per hand)</option></select></label>
+        <label class="row">Finger numbers (1–5) <input id="setFingers" type="checkbox" checked /></label>
+        <label class="row">Key lights preview <input id="setLights" type="checkbox" checked /></label>
+        <label class="row">Falling speed <input id="setZoom" type="range" min="0.5" max="2" step="0.1" value="1" /></label>
+        <label class="row">Hear notes of practiced hand <input id="setGuide" type="checkbox" checked /></label>
+        <label class="row">Mute song audio <input id="setMute" type="checkbox" /></label>
+        <label class="row">Sound for MIDI keyboard <input id="setMidiSound" type="checkbox" checked /></label>
+        <label class="row">Metronome <input id="setMetro" type="checkbox" /></label>
+        <label class="row">Effects <input id="setFx" type="checkbox" checked /></label>
+        <label class="row">Volume <input id="setVol" type="range" min="0" max="1" step="0.05" value="0.8" /></label>
+        <div class="row btns">
+          <button id="loopA" class="glass pill">Set A</button>
+          <button id="loopB" class="glass pill">Set B</button>
+          <button id="loopClear" class="glass pill">Clear loop</button>
+        </div>
+        <div class="row btns">
+          <button id="restartBtn" class="glass pill">↺ Restart</button>
+          <button id="exportBtn" class="glass pill"><img class="ic" src="icons/ic-export.webp" alt="" draggable="false"> Export MIDI</button>
+        </div>
+      </div>
+    </div>
+    <div class="now-playing">
+      <span id="npCover" class="cover sm"></span>
+      <span id="npTitle"></span>
+      <span id="npTime" class="muted"></span>
+    </div>
+    <button id="bigPlay" class="big-play" aria-label="Play"><svg viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg></button>
+    <button id="endBtn" class="glass pill end-btn"><svg viewBox="0 0 24 24"><path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4M10 17l5-5-5-5M15 12H3"/></svg> End session</button>
+    <div id="resultModal" class="modal hidden">
+      <div class="modal-card">
+        <h3><img class="ic xl" src="icons/ic-trophy.webp" alt="" draggable="false"><br>Session complete</h3>
+        <div class="big-score"><span id="resAcc">0</span>%</div>
+        <p class="muted">accuracy</p>
+        <div class="stats">
+          <div><b id="resHit">0</b><span>hit</span></div>
+          <div><b id="resMiss">0</b><span>missed</span></div>
+          <div><b id="resWrong">0</b><span>wrong</span></div>
+          <div><b id="resStreak">0</b><span>best streak</span></div>
+        </div>
+        <div class="row btns center">
+          <button id="resAgain" class="btn primary">Play again</button>
+          <button id="resLib" class="btn">Library</button>
+        </div>
+      </div>
+    </div>
+    <div id="rotateHint" class="rotate-hint">↻ Rotate your phone to landscape for the best view</div>
+  </section>
+
+  <!-- ================= BUSY / TOAST ================= -->
+  <div id="busy" class="busy hidden">
+    <div class="orb big"></div>
+    <p id="busyStage">Working…</p>
+    <div class="bar"><div id="busyBar"></div></div>
+    <p class="muted small">Runs privately on your device – free & unlimited.</p>
+    <button id="busyCancel" class="btn hidden">Stop recording</button>
+  </div>
+  <div id="sheet" class="sheet hidden"></div>
+  <div id="syxPicker" class="busy picker hidden">
+    <div class="modal-card picker-card">
+      <h3>Presets auswählen</h3>
+      <p id="pickInfo" class="muted small"></p>
+      <input id="pickSearch" class="pick-search" placeholder="Suchen …" autocomplete="off" />
+      <div class="row btns"><button id="pickAll" class="link small">Alle</button><button id="pickNone" class="link small">Keine</button></div>
+      <div id="pickList" class="pick-list"></div>
+      <label class="row">Ziel <select id="pickTarget"><option value="custom">Zu „Meine FM-Presets“ hinzufügen</option><option value="new">Als neue Bank speichern</option></select></label>
+      <input id="pickName" class="pick-search hidden" placeholder="Name der neuen Bank" />
+      <div class="row btns center">
+        <button id="pickOk" class="btn primary">Importieren</button>
+        <button id="pickCancel" class="btn">Abbrechen</button>
+      </div>
+    </div>
+  </div>
+  <div id="accountModal" class="busy account hidden">
+    <div class="modal-card account-card">
+      <div id="accOut">
+        <h3>Keyflow account</h3>
+        <p class="muted small">Sync your library across devices via your Keyflow server.</p>
+        <form id="accForm">
+          <input id="accUser" placeholder="Username" autocomplete="username" autocapitalize="none" required />
+          <input id="accPass" type="password" placeholder="Password (min. 6)" autocomplete="current-password" required />
+          <p id="accErr" class="err"></p>
+          <div class="row btns center">
+            <button type="submit" class="btn primary" data-mode="login">Log in</button>
+            <button type="submit" class="btn" data-mode="register">Create account</button>
+          </div>
+        </form>
+      </div>
+      <div id="accIn" class="hidden">
+        <h3><img class="ic lg" src="icons/ic-coach.webp" alt="" draggable="false"> Hi, <span id="accName"></span></h3>
+        <p id="accStatus" class="muted small"></p>
+        <p class="muted small">Im Konto gespeichert: Songs inkl. Audio, Sound-Bibliotheken (SoundFont, SFZ, FM/.syx), „Meine FM-Presets“, SysEx, Einstellungen und Coach-Chat.</p>
+        <p id="accUsage" class="small"></p>
+        <div class="row btns center">
+          <button id="accSync" class="btn primary">↻ Jetzt synchronisieren</button>
+          <button id="accLogout" class="btn">Abmelden</button>
+        </div>
+        <p class="panel-title" style="margin-top:14px">SICHERUNG – AUCH AUSSERHALB DES HANDYS</p>
+        <div class="row btns">
+          <a id="accBackup" class="btn" download><img class="ic" src="icons/ic-export.webp" alt="" draggable="false"> Sicherung herunterladen</a>
+          <button id="accRestore" class="btn"><img class="ic" src="icons/ic-import.webp" alt="" draggable="false"> Wiederherstellen</button>
+        </div>
+        <label class="row">Automatisch nach /sdcard/Keyflow sichern <input id="accAuto" type="checkbox" /></label>
+        <p id="accAutoInfo" class="muted small"></p>
+        <p class="muted small">Tipp: Lade die .keyflow-Datei zu Google Drive hoch oder kopiere sie auf deinen PC – dann ist alles auch sicher, wenn das Handy verloren geht.</p>
+        <input id="accRestoreFile" type="file" accept=".keyflow,.zip" hidden />
+      </div>
+      <button id="accClose" class="link">Close</button>
+    </div>
+  </div>
+  <div id="creditsModal" class="busy account hidden">
+    <div class="modal-card account-card credits">
+      <h3>Credits &amp; Lizenzen</h3>
+      <p class="small">Keyflow ist eine eigenständige Klavier-Lern-App. Sie nutzt diese freien Projekte – vielen Dank!</p>
+      <ul class="small">
+        <li><b>Basic Pitch</b> (Spotify) – Audio→MIDI, Apache-2.0</li>
+        <li><b>Onsets and Frames</b> (Google Magenta) – Klavier-Transkription, Apache-2.0</li>
+        <li><b>TensorFlow.js</b> – Apache-2.0</li>
+        <li><b>SpessaSynth</b> – SoundFont-Synthesizer, Apache-2.0</li>
+        <li><b>@tonejs/midi</b> – MIDI lesen/schreiben, MIT</li>
+        <li><b>fflate</b> – ZIP, MIT</li>
+        <li><b>Salamander Grand Piano</b> – Samples von Alexander Holm, CC-BY 3.0</li>
+        <li><b>GeneralUser GS</b> – SoundFont von S. Christian Collins (freie Lizenz des Autors)</li>
+        <li>Lokale App zusätzlich: Transkun (Yujia Yan, MIT), MuScriptor (Code MIT, Gewichte CC BY-NC 4.0), Ollama/Qwen, yt-dlp</li>
+        <li>Icons: für Keyflow mit Astrocade generiert · Eingebaute Songs: gemeinfreie Melodien</li>
+      </ul>
+      <p class="muted small">Alle Daten (Songs, Aufnahmen, Sounds) bleiben in deinem Browser. Es wird nichts hochgeladen.</p>
+      <button id="creditsClose" class="btn primary">Schließen</button>
+    </div>
+  </div>
+  <div id="toast" class="toast"></div>
+
+  <script>window.KEYFLOW_STATIC = true;</script>
+  <script type="module" src="js/app.js"></script>
+</body>
+</html>

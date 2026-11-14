@@ -1,0 +1,79 @@
+<!doctype html>
+<!--
+  Second transcription model: Google Magenta "Onsets and Frames" (Apache-2.0),
+  trained on the MAESTRO piano dataset – very accurate for solo piano / piano covers.
+  Runs in its own iframe so its TensorFlow.js 2.x doesn't clash with Basic Pitch (TF.js 3.x).
+  Protocol (postMessage):
+    → {type:'transcribe', id, samples: Float32Array (mono), sampleRate}
+    ← {type:'progress', id, stage, pct} | {type:'result', id, notes:[{p,t,d,v}]} | {type:'error', id, message}
+-->
+<meta charset="utf-8" />
+<script type="module">
+  const TF = 'https://esm.sh/@tensorflow/tfjs@^2.7.0?target=es2022';
+  const TF_WASM = 'https://esm.sh/@tensorflow/tfjs-backend-wasm@2.8.6?target=es2022';
+  const TF_WASM_FILES = 'https://cdn.jsdelivr.net/npm/@tensorflow/tfjs-backend-wasm@2.8.6/dist/';
+  const MM = 'https://esm.sh/@magenta/music@1.23.1/es6/transcription?target=es2022';
+  const CKPT = 'https://storage.googleapis.com/magentadata/js/checkpoints/transcription/onsets_frames_uni';
+  const BACKENDS = ['webgl', 'wasm', 'cpu'];
+
+  let tf, mm, model;
+  const post = (m) => parent.postMessage(m, location.origin);
+
+  async function useBackend(name) {
+    tf = tf || (await import(TF));
+    if (name === 'wasm' && !tf.findBackend('wasm')) (await import(TF_WASM)).setWasmPaths(TF_WASM_FILES);
+    if (!(await tf.setBackend(name))) throw new Error('backend unavailable: ' + name);
+    await tf.ready();
+    if (name === 'webgl') tf.tidy(() => tf.conv2d(tf.ones([1, 8, 8, 1]), tf.ones([3, 3, 1, 1]), 1, 'same').dataSync());
+    mm = mm || (await import(MM));
+    model?.dispose();
+    model = new mm.OnsetsAndFrames(CKPT);
+    await model.initialize();
+  }
+
+  async function ensureModel(id) {
+    if (model?.isInitialized()) return;
+    const saved = localStorage.getItem('kf-oaf-backend');
+    for (const b of saved ? [saved, ...BACKENDS.filter((x) => x !== saved)] : BACKENDS) {
+      try {
+        post({ type: 'progress', id, stage: `Loading piano model (${b.toUpperCase()})…`, pct: 0 });
+        await useBackend(b);
+        localStorage.setItem('kf-oaf-backend', b);
+        return;
+      } catch (e) { console.warn('O&F backend failed', b, e); model = null; }
+    }
+    throw new Error('Could not start the piano model in this browser.');
+  }
+
+  addEventListener('message', async (e) => {
+    if (e.origin !== location.origin || e.data?.type !== 'transcribe') return;
+    const { id, samples, sampleRate } = e.data;
+    try {
+      await ensureModel(id);
+      const buf = new AudioBuffer({ length: samples.length, sampleRate, numberOfChannels: 1 });
+      buf.copyToChannel(samples, 0);
+      for (;;) {
+        // O&F has no progress callback – report an estimate based on audio length
+        const t0 = performance.now(), est = (samples.length / sampleRate) * (tf.getBackend() === 'webgl' ? 150 : 900);
+        const timer = setInterval(() => post({ type: 'progress', id, stage: `Transcribing with piano model (${tf.getBackend() === 'webgl' ? 'GPU' : tf.getBackend().toUpperCase()})…`, pct: Math.min(0.95, (performance.now() - t0) / est) }), 400);
+        try {
+          const ns = await model.transcribeFromAudioBuffer(buf);
+          clearInterval(timer);
+          const notes = ns.notes.map((n) => ({ p: n.pitch, t: n.startTime, d: Math.max(0.05, n.endTime - n.startTime), v: (n.velocity || 80) / 127 }));
+          post({ type: 'result', id, notes });
+          return;
+        } catch (err) {
+          clearInterval(timer);
+          const next = BACKENDS[BACKENDS.indexOf(tf.getBackend()) + 1];
+          if (!next) throw err;
+          console.warn('O&F failed on', tf.getBackend(), err);
+          await useBackend(next);
+          localStorage.setItem('kf-oaf-backend', next);
+        }
+      }
+    } catch (err) {
+      post({ type: 'error', id, message: err.message || String(err) });
+    }
+  });
+  post({ type: 'ready' });
+</script>
