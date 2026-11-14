@@ -280,7 +280,7 @@
           <button id="accSync" class="btn primary">↻ Jetzt synchronisieren</button>
           <button id="accLogout" class="btn">Abmelden</button>
         </div>
-        <p class="panel-title" style="margin-top:14px">SICHERUNG – AUCH AUSSERHALB DES HANDYS</p>
+        <div class="server-only"><p class="panel-title" style="margin-top:14px">SICHERUNG – AUCH AUSSERHALB DES HANDYS</p>
         <div class="row btns">
           <a id="accBackup" class="btn" download><img class="ic" src="icons/ic-export.webp" alt="" draggable="false"> Sicherung herunterladen</a>
           <button id="accRestore" class="btn"><img class="ic" src="icons/ic-import.webp" alt="" draggable="false"> Wiederherstellen</button>
@@ -288,7 +288,7 @@
         <label class="row">Automatisch nach /sdcard/Keyflow sichern <input id="accAuto" type="checkbox" /></label>
         <p id="accAutoInfo" class="muted small"></p>
         <p class="muted small">Tipp: Lade die .keyflow-Datei zu Google Drive hoch oder kopiere sie auf deinen PC – dann ist alles auch sicher, wenn das Handy verloren geht.</p>
-        <input id="accRestoreFile" type="file" accept=".keyflow,.zip" hidden />
+        <input id="accRestoreFile" type="file" accept=".keyflow,.zip" hidden /></div>
       </div>
       <button id="accClose" class="link">Close</button>
     </div>

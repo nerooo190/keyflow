@@ -7,6 +7,7 @@ import { inputs } from './input.js';
 import * as sync from './sync.js';
 import { LIGHT_PROTOCOLS } from './lights.js';
 import * as ai from './assistant.js';
+import { SYSTEM_PROMPT } from './coach-prompt.js';
 import * as soundlib from './soundlib.js';
 import { GM_FAMILIES } from './sf-engine.js';
 import { parseSyx } from './dx7.js';
@@ -172,7 +173,16 @@ function renderAiBar() {
   const st = aiState || {};
   let html = '';
   if (STATIC) {
-    html = `<div class="ai-setup">${ic('ic-coach')} Die öffentliche Web-Version läuft komplett in deinem Browser. KI-Coach, Song-Suche, Links, Konto-Sync und die Server-Modelle gibt es in der lokalen Keyflow-App. Hier: Audio/Video mit <b>+</b> hochladen, mit dem Mikro aufnehmen oder eine MIDI-Datei importieren – oder einen der eingebauten Songs wählen.</div>`;
+    const bm = ai.browserModel();
+    if (ai.browserLoaded()) {
+      html = `<div class="ai-ready"><span>${ic('ic-coach')} Coach bereit · <span class="muted">${esc(bm.id)} im Browser</span></span><span><button class="link small" id="newChat">Neuer Chat</button> <button class="link small" data-bswitch="1">Modell</button></span></div>`;
+    } else if (bm) {
+      html = `<div class="ai-ready"><span>${ic('ic-coach')} Coach: <span class="muted">${esc(bm.id)} – wird bei der ersten Frage aus dem Browser-Speicher geladen</span></span><button class="link small" data-bswitch="1">Modell</button></div>`;
+    } else {
+      html = `<div class="ai-setup">${ic('ic-coach')} <b>KI-Coach aktivieren</b> – läuft komplett in deinem Browser, kostenlos, nichts wird an einen Server geschickt. Einmaliger Download (WLAN empfohlen), danach im Browser gespeichert:
+        ${ai.BROWSER_MODELS.map((m) => `<button class="btn small-btn" data-bpull="${m.id}">${esc(m.id)} · ${esc(m.size)} – ${esc(m.note)}</button>`).join('')}
+        <div class="muted small" style="margin-top:6px">Song-Suche & Links gibt es nur in der lokalen App – hier lädst du Songs mit <b>+</b> hoch.</div></div>`;
+    }
   } else if (st.offline) {
     html = `<div class="ai-setup"><b>Server offline:</b> Der Keyflow-Server läuft nicht. Starte ihn in Termux mit <code>~/keyflow.sh</code> und lade die Seite neu.</div>`;
   } else if (!st.installed) {
@@ -214,11 +224,18 @@ function renderChat() {
 
 async function sendChat(text) {
   if (aiBusy) return;
-  if (STATIC) {
-    $('#askInput').value = '';
-    return toast('Song-Suche gibt es nur in der lokalen App – lade die Audiodatei mit + hoch oder wähle einen eingebauten Song.', 5000);
+  if (STATIC && !ai.browserModel()) {
+    return toast('Aktiviere oben zuerst den KI-Coach (einmaliger Download).', 4000, 'ic-coach');
   }
-  if (!aiState?.model) {
+  if (STATIC && !ai.browserLoaded()) {
+    try {
+      busy('Lade KI-Coach …', 0);
+      await ai.loadBrowserModel(ai.browserModel().id, (p) => busy('Lade KI-Coach …', p));
+      unbusy();
+      renderAiBar();
+    } catch (err) { unbusy(); return toast('KI-Coach konnte nicht geladen werden: ' + err.message, 6000); }
+  }
+  if (!STATIC && !aiState?.model) {
     // no AI available → behave like before: treat the text as a song name
     toast('KI-Coach noch nicht aktiv – suche den Song direkt', 2500);
     return handleSearch(text);
@@ -231,7 +248,7 @@ async function sendChat(text) {
   box.scrollTop = box.scrollHeight;
   const live = $('#liveBubble');
   try {
-    await ai.ask(text, aiContext(), (full) => {
+    await (STATIC ? (t, c, f) => ai.askBrowser(t, c, f, SYSTEM_PROMPT) : ai.ask)(text, aiContext(), (full) => {
       live.classList.remove('typing');
       live.innerHTML = ai.render(full, true);
       box.scrollTop = box.scrollHeight;
@@ -250,6 +267,7 @@ function learn(title) {
   const t = title.toLowerCase();
   const hit = CATALOG.find((c) => t.includes(c.title.toLowerCase().split(' (')[0]));
   if (hit) return addBuiltin(hit.id);
+  if (STATIC) return toast(`„${title}“: lade die Audiodatei (oder ein Piano-Cover) mit + hoch – Keyflow macht daraus das Tutorial.`, 6000, 'ic-note');
   return handleSearch(title.replace(/\s+-\s+/, ' '));
 }
 
@@ -269,6 +287,19 @@ $('#createResults').onclick = (e) => {
   const q = e.target.closest('[data-quick]');
   if (q) return sendChat(q.dataset.quick);
 };
+$('#aiBar').addEventListener('click', async (e) => {
+  const pull = e.target.closest('[data-bpull]')?.dataset.bpull;
+  if (pull) {
+    try {
+      busy('Lade KI-Coach (einmalig) …', 0);
+      await ai.loadBrowserModel(pull, (p) => busy('Lade KI-Coach (einmalig) …', p));
+      unbusy();
+      toast('KI-Coach bereit – frag mich etwas!', 3000, 'ic-coach');
+    } catch (err) { unbusy(); toast('Download fehlgeschlagen: ' + err.message, 6000); }
+    return renderAiBar();
+  }
+  if (e.target.closest('[data-bswitch]')) { ai.forgetBrowserModel(); renderAiBar(); }
+});
 $('#aiBar').onclick = async (e) => {
   const p = e.target.closest('[data-pull]');
   if (p) {
@@ -1289,9 +1320,18 @@ document.addEventListener('kf-profile', () => sync.profileChanged());
 // ---------------- boot ----------------
 (async () => {
   const firstRun = await seedIfEmpty();
+  const CLOUD = sync.backendKind() === 'cloud';
+  if (CLOUD) {
+    document.documentElement.classList.add('cloud');
+    $('#accUser').placeholder = 'E-Mail-Adresse';
+    $('#accUser').type = 'email';
+    $('#accUser').autocomplete = 'email';
+    renderAccount();
+    sync.syncNow();
+  }
   if (STATIC) {
     for (const v of ['muscriptor', 'transkun']) { const o = $(`#optModel option[value=${v}]`); o.disabled = true; o.textContent += ' – nur lokale App'; }
-    $('#optDemucs').disabled = true;
+    $('#optDemucs').parentElement.firstChild.textContent = 'Gesang & Drums entfernen (Demucs im Browser, einmalig ~181 MB) ';
     $('#askInput').placeholder = 'Eingebauten Song suchen – oder Audio mit + hochladen';
   } else {
     renderAccount();
@@ -1299,11 +1339,8 @@ document.addEventListener('kf-profile', () => sync.profileChanged());
   }
   (STATIC ? Promise.reject() : fetch('/api/caps')).then((r) => r.json()).then((caps) => {
     const d = $('#optDemucs');
-    d.disabled = !caps.demucs;
-    if (!caps.demucs) {
-      d.parentElement.title = 'Install Demucs on the server PC: pip install demucs';
-      d.parentElement.style.opacity = 0.5;
-    }
+    // without server Demucs the browser version is used automatically
+    if (!caps.demucs) d.parentElement.firstChild.textContent = 'Gesang & Drums entfernen (Demucs im Browser, einmalig ~181 MB) ';
     const ms = $('#optModel option[value=muscriptor]');
     if (!caps.muscriptor) { ms.disabled = true; ms.textContent += ' – not installed'; }
     const tk = $('#optModel option[value=transkun]');

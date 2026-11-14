@@ -66,3 +66,61 @@ export function render(text, streaming = false) {
   });
   return html.replace(/(<br>)*(<button class="song-card")/g, '$2').replace(/(<\/button>)(<br>)+/g, '$1');
 }
+
+// ---------------- in-browser coach (public web version): llama.cpp via wllama (MIT), no server ----------------
+const WLLAMA = 'https://cdn.jsdelivr.net/npm/@wllama/wllama@3.13.0/esm/index.js';
+const WLLAMA_WASM = 'https://cdn.jsdelivr.net/npm/@wllama/wllama@3.13.0/esm/wasm-from-cdn.js';
+export const BROWSER_MODELS = [
+  { id: 'qwen-0.5b', repo: 'Qwen/Qwen2.5-0.5B-Instruct-GGUF', file: 'qwen2.5-0.5b-instruct-q4_k_m.gguf', size: '≈490 MB', note: 'schnell, läuft auf fast jedem Handy' },
+  { id: 'qwen-1.5b', repo: 'Qwen/Qwen2.5-1.5B-Instruct-GGUF', file: 'qwen2.5-1.5b-instruct-q4_k_m.gguf', size: '≈1,1 GB', note: 'klüger, braucht mehr RAM' },
+];
+const BM_KEY = 'kf-browser-model';
+let wllama = null, loadedId = null, loading = null;
+
+export const browserModel = () => BROWSER_MODELS.find((m) => m.id === localStorage.getItem(BM_KEY)) || null;
+export const browserLoaded = () => !!loadedId;
+
+/** Download (first time) or load from the browser cache, then keep it in memory. */
+export async function loadBrowserModel(id, onProgress = () => {}) {
+  const m = BROWSER_MODELS.find((x) => x.id === id);
+  if (!m) throw new Error('Unbekanntes Modell');
+  if (loadedId === id) return;
+  if (loading) return loading;
+  loading = (async () => {
+    const [{ Wllama }, { default: wasm }] = await Promise.all([import(WLLAMA), import(WLLAMA_WASM)]);
+    if (wllama) { try { await wllama.exit(); } catch {} }
+    wllama = new Wllama(wasm);
+    await wllama.loadModelFromHF({ repo: m.repo, file: m.file }, {
+      n_ctx: 2048,
+      useCache: true,
+      progressCallback: ({ loaded, total }) => onProgress(total ? loaded / total : 0),
+    });
+    loadedId = id;
+    localStorage.setItem(BM_KEY, id);
+  })();
+  try { await loading; } finally { loading = null; }
+}
+
+export function forgetBrowserModel() { localStorage.removeItem(BM_KEY); }
+
+/** Same contract as ask(): streams the answer of the in-browser model. */
+export async function askBrowser(text, context, onDelta, systemPrompt) {
+  if (!loadedId) throw new Error('Der KI-Coach ist noch nicht geladen.');
+  history.push({ role: 'user', content: text });
+  save();
+  const messages = [{ role: 'system', content: systemPrompt(context || {}) }, ...history.slice(-12)];
+  let full = '';
+  try {
+    const stream = await wllama.createChatCompletion({ messages, stream: true, temperature: 0.7, max_tokens: 400 });
+    for await (const chunk of stream) {
+      const d = chunk.choices?.[0]?.delta?.content;
+      if (d) { full += d; onDelta(full); }
+    }
+  } catch (e) {
+    history.pop(); save();
+    throw e;
+  }
+  history.push({ role: 'assistant', content: full.trim() });
+  save();
+  return full;
+}

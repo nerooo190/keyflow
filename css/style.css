@@ -264,6 +264,6 @@ a.btn { display: inline-flex; align-items: center; gap: 6px; text-decoration: no
 @media (orientation: portrait) and (max-width: 700px) { .level-panel { left: 16px; right: 16px; } .hand-seg .seg-btn { padding: 0 6px; font-size: 12px; } }
 
 /* ---------- static (public web) build ---------- */
-.static #accountBtn, .static #accModal, .static #optKind, .static #optDemucs, .static label:has(> #optKind), .static label:has(> #optDemucs) { display: none !important; }
+.static:not(.cloud) #accountBtn, .cloud .server-only, .static #optKind, .static label:has(> #optKind) { display: none !important; }
 .credits-link { text-align: center; margin: 28px 0 90px; }
 .credits ul { text-align: left; padding-left: 18px; line-height: 1.6; }

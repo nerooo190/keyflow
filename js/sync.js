@@ -1,11 +1,13 @@
-// Account sync with the Keyflow server: everything goes into the account.
+// Account sync: everything goes into the account.
 //  • songs (incl. original audio as content-addressed blob)
 //  • sound libraries: SoundFonts, SFZ (+ samples), DX7/reface banks, "Meine FM-Presets", SysEx commands
 //  • profile: settings + coach chat
 // Last-writer-wins per record (updatedAt); deletions are tombstones. Large files are uploaded once
 // (SHA-256 addressed) and downloaded on demand on other devices.
+// Two interchangeable backends: the local Keyflow server (server.js) or Supabase (public web version).
 import * as db from './db.js';
 import * as soundlib from './soundlib.js';
+import { cloudBackend, cloudEnabled } from './cloud-backend.js';
 
 const KEY = 'kf-account';
 const PROFILE_TS = 'kf-profile-ts';
@@ -19,6 +21,7 @@ export const onSyncState = (fn) => listeners.add(fn);
 const emit = (state) => listeners.forEach((fn) => fn(state));
 const auth = () => (account ? { authorization: 'Bearer ' + account.token } : {});
 
+// ---------------- backend: local Keyflow server ----------------
 async function api(path, opts = {}) {
   const res = await fetch(path, { ...opts, headers: { 'content-type': 'application/json', ...auth(), ...(opts.headers || {}) } });
   const data = await res.json().catch(() => ({}));
@@ -26,46 +29,72 @@ async function api(path, opts = {}) {
   if (!res.ok && res.status !== 409) throw new Error(data.error || `Server error ${res.status}`);
   return { status: res.status, data };
 }
+const serverBackend = {
+  kind: 'server',
+  async login(username, password, register) {
+    const { data } = await api(register ? '/api/register' : '/api/login', { method: 'POST', body: JSON.stringify({ username, password }) });
+    return { username: data.username, token: data.token };
+  },
+  async logout() { try { await api('/api/logout', { method: 'POST' }); } catch {} },
+  async session() { return account; },
+  async list(kind) {
+    if (kind === 'song') return (await api('/api/songs')).data.songs;
+    if (kind === 'bank') return (await api('/api/banks')).data.banks;
+    const p = (await api('/api/profile')).data;
+    return p.updatedAt ? [{ ...p, id: 'me' }] : [];
+  },
+  async put(kind, rec) {
+    const path = kind === 'song' ? '/api/songs/' + encodeURIComponent(rec.id) : kind === 'bank' ? '/api/banks/' + encodeURIComponent(rec.id) : '/api/profile';
+    await api(path, { method: 'PUT', body: JSON.stringify(rec) });
+    return { ok: true };
+  },
+  async hasBlob(hash) { return (await fetch('/api/blobs/' + hash, { method: 'HEAD', headers: auth() })).ok; },
+  async putBlob(blob, hash) {
+    const r = await fetch('/api/blobs' + (hash ? '/' + hash : ''), { method: 'PUT', headers: auth(), body: blob });
+    if (!r.ok) throw new Error('Upload fehlgeschlagen: ' + ((await r.text()) || r.status));
+    return (await r.json()).hash;
+  },
+  async getBlob(hash) {
+    const r = await fetch('/api/blobs/' + hash, { headers: auth() });
+    if (!r.ok) throw new Error('Datei nicht im Konto gefunden');
+    return r.blob();
+  },
+  async usage() { return (await api('/api/usage')).data; },
+};
+
+/** The public static site uses Supabase (if configured); the local app uses its own server. */
+const backend = window.KEYFLOW_STATIC && cloudEnabled() ? cloudBackend : serverBackend;
+export const backendKind = () => (window.KEYFLOW_STATIC ? (cloudEnabled() ? 'cloud' : 'none') : 'server');
 
 export async function login(username, password, register = false) {
-  const { data } = await api(register ? '/api/register' : '/api/login', { method: 'POST', body: JSON.stringify({ username, password }) });
-  account = { username: data.username, token: data.token };
+  account = { ...(await backend.login(username.trim(), password, register)), kind: backend.kind };
   localStorage.setItem(KEY, JSON.stringify(account));
   await syncNow();
   return account;
 }
 function logoutLocal() { account = null; localStorage.removeItem(KEY); emit({ state: 'logged-out' }); }
-export async function logout() { try { await api('/api/logout', { method: 'POST' }); } catch {} logoutLocal(); }
+export async function logout() { await backend.logout(); logoutLocal(); }
 
 // ---------- blobs ----------
 async function sha256(blob) {
-  if (!globalThis.crypto?.subtle) return null; // not a secure context (e.g. LAN IP) → server computes it
+  if (!globalThis.crypto?.subtle) return null; // not a secure context → the local server computes it
   const d = await crypto.subtle.digest('SHA-256', await blob.arrayBuffer());
   return [...new Uint8Array(d)].map((b) => b.toString(16).padStart(2, '0')).join('');
 }
-/** Make sure the server has this blob; returns its hash. */
 async function ensureBlob(blob, knownHash) {
   const h = knownHash || (await sha256(blob));
-  if (h) {
-    const head = await fetch('/api/blobs/' + h, { method: 'HEAD', headers: auth() });
-    if (head.ok) return h;
-  }
-  const r = await fetch('/api/blobs' + (h ? '/' + h : ''), { method: 'PUT', headers: auth(), body: blob });
-  if (!r.ok) throw new Error('Upload fehlgeschlagen: ' + ((await r.text()) || r.status));
-  return (await r.json()).hash;
+  if (h && (await backend.hasBlob(h))) return h;
+  return backend.putBlob(blob, h);
 }
 export async function fetchBlob(hash) {
-  if (!account) throw new Error('Nicht angemeldet – Datei liegt im Konto');
-  const r = await fetch('/api/blobs/' + hash, { headers: auth() });
-  if (!r.ok) throw new Error('Datei nicht im Konto gefunden');
-  return r.blob();
+  if (!account) throw new Error('Nicht angemeldet – diese Datei liegt in deinem Konto');
+  return backend.getBlob(hash);
 }
 soundlib.setBlobFetcher(fetchBlob);
 
 // ---------- songs ----------
 async function syncSongs(stats) {
-  const { data } = await api('/api/songs');
-  const remote = new Map(data.songs.map((s) => [s.id, s]));
+  const remote = new Map((await backend.list('song')).map((s) => [s.id, s]));
   const local = new Map((await db.getAllRaw()).map((s) => [s.id, s]));
   for (const [id, r] of remote) {
     const l = local.get(id);
@@ -82,11 +111,12 @@ async function syncSongs(stats) {
       if (!l.updatedAt) l.updatedAt = l.createdAt || Date.now();
       if (l.audio && !l.deleted) {
         emit({ state: 'syncing', detail: `Audio „${l.title}“` });
-        l.audioHash = await ensureBlob(l.audio, l.audioHash);
+        try { l.audioHash = await ensureBlob(l.audio, l.audioHash); }
+        catch (e) { emit({ state: 'syncing', detail: `Audio „${l.title}“ übersprungen: ${e.message}` }); }
       }
       await db.put(l, false);
       const { audio, ...rest } = l;
-      await api('/api/songs/' + encodeURIComponent(id), { method: 'PUT', body: JSON.stringify(rest) });
+      await backend.put('song', rest);
       stats.pushed++;
     }
   }
@@ -112,8 +142,7 @@ async function bankForServer(b) {
 }
 
 async function syncBanks(stats) {
-  const { data } = await api('/api/banks');
-  const remote = new Map(data.banks.map((b) => [b.id, b]));
+  const remote = new Map((await backend.list('bank')).map((b) => [b.id, b]));
   const local = new Map((await soundlib.allBankRecords()).map((b) => [b.id, b]));
   for (const [id, r] of remote) {
     const l = local.get(id);
@@ -133,10 +162,14 @@ async function syncBanks(stats) {
     const missingBlobs = !l.deleted && ((l.type === 'sf' && l.blob && !l.blobHash) || (l.type === 'sfz' && (l.files || []).some((f) => f.blob && !f.hash)));
     if (!r || (l.updatedAt || 0) > (r.updatedAt || 0) || missingBlobs) {
       if (!l.updatedAt) l.updatedAt = l.created || Date.now();
-      const rec = await bankForServer(l);
-      await soundlib.putSyncedBank(l); // remember hashes locally
-      await api('/api/banks/' + encodeURIComponent(id), { method: 'PUT', body: JSON.stringify(rec) });
-      stats.pushed++;
+      try {
+        const rec = await bankForServer(l);
+        await soundlib.putSyncedBank(l); // remember hashes locally
+        await backend.put('bank', rec);
+        stats.pushed++;
+      } catch (e) {
+        emit({ state: 'syncing', detail: `„${l.name}“ übersprungen: ${e.message}` });
+      }
     }
   }
 }
@@ -149,7 +182,7 @@ export function profileChanged() {
 }
 async function syncProfile(stats) {
   if (!profileIO) return;
-  const { data: remote } = await api('/api/profile');
+  const remote = (await backend.list('profile'))[0] || {};
   const localTs = +(localStorage.getItem(PROFILE_TS) || 0);
   if ((remote.updatedAt || 0) > localTs) {
     profileIO.apply(remote);
@@ -158,18 +191,19 @@ async function syncProfile(stats) {
   } else if (localTs > (remote.updatedAt || 0) || !remote.updatedAt) {
     const ts = localTs || Date.now();
     localStorage.setItem(PROFILE_TS, String(ts));
-    await api('/api/profile', { method: 'PUT', body: JSON.stringify({ ...profileIO.get(), updatedAt: ts }) });
+    await backend.put('profile', { id: 'me', ...profileIO.get(), updatedAt: ts });
     stats.pushed++;
   }
 }
 
 export async function syncNow() {
-  if (!account) return;
+  if (!account || backendKind() === 'none') return;
   if (running) { again = true; return running; }
   running = (async () => {
     emit({ state: 'syncing' });
     const stats = { pulled: 0, pushed: 0 };
     try {
+      if (backend.kind === 'cloud' && !(await backend.session())) { logoutLocal(); throw new Error('Bitte erneut anmelden'); }
       await syncSongs(stats);
       await syncBanks(stats);
       await syncProfile(stats);
@@ -195,8 +229,8 @@ soundlib.setOnBankChange(schedule);
 window.addEventListener('online', () => syncNow());
 
 // ---------- account tools ----------
-export async function usage() { return (await api('/api/usage')).data; }
-export const backupUrl = () => (account ? '/api/backup?t=' + encodeURIComponent(account.token) : null);
+export async function usage() { return backend.usage(); }
+export const backupUrl = () => (account && backend.kind === 'server' ? '/api/backup?t=' + encodeURIComponent(account.token) : null);
 export async function setAutoBackup(enabled) { return (await api('/api/autobackup', { method: 'PUT', body: JSON.stringify({ enabled }) })).data; }
 export async function restoreBackup(file) {
   const r = await fetch('/api/restore', { method: 'POST', headers: auth(), body: file });

@@ -213,10 +213,19 @@ export const MODES = {
 export async function transcribe(arrayBuffer, onProgress = () => {}, opts = {}) {
   const { sens = 0.5, split = 60, mode = 'piano', drums = true, model = 'basicpitch', demucs = false, msSize = 'small', quantize = true } = opts;
   if (demucs) {
-    onProgress('Separating instruments with Demucs (server)… this can take a few minutes', 0);
-    const r = await fetch('/api/separate', { method: 'POST', body: arrayBuffer });
-    if (!r.ok) throw new Error('Demucs: ' + ((await r.text()) || r.status));
-    arrayBuffer = await r.arrayBuffer();
+    // public web version (or local server without Demucs): run Demucs right here in the browser
+    let separated = null;
+    if (!window.KEYFLOW_STATIC) {
+      onProgress('Separating instruments with Demucs (server)… this can take a few minutes', 0);
+      const r = await fetch('/api/separate', { method: 'POST', body: arrayBuffer }).catch(() => null);
+      if (r?.ok) separated = await r.arrayBuffer();
+      else if (r && r.status !== 501) throw new Error('Demucs: ' + ((await r.text()) || r.status));
+    }
+    if (!separated) {
+      const { separateInBrowser } = await import('./demucs-browser.js');
+      separated = await separateInBrowser(arrayBuffer, onProgress);
+    }
+    arrayBuffer = separated;
   }
   onProgress('Decoding audio…', 0);
   let audio;
