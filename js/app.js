@@ -12,6 +12,7 @@ import * as soundlib from './soundlib.js';
 import { GM_FAMILIES } from './sf-engine.js';
 import { parseSyx } from './dx7.js';
 import { LEVELS, rate, simplify } from './difficulty.js';
+import { analyze, toMusicXML } from './score.js';
 
 const $ = (s) => document.querySelector(s);
 /** Public static build (GitHub Pages): no Keyflow server → server-only features are hidden. */
@@ -67,6 +68,7 @@ async function route() {
   const h = location.hash || '#/library';
   if (currentPlayer && !h.startsWith('#/play/')) closePlayer();
   if (h.startsWith('#/play/')) return openPlayer(decodeURIComponent(h.slice(7)));
+  if (h.startsWith('#/score/')) return openScore(decodeURIComponent(h.slice(8)));
   if (h === '#/new') { show('create'); renderCreate(); return; }
   show('library');
   renderLibrary();
@@ -134,6 +136,7 @@ $('#songList').onclick = async (e) => {
     sheet(song.title, [
       { label: '▶  Play', run: () => (location.hash = '#/play/' + encodeURIComponent(song.id)) },
       { label: 'Rename', run: async () => { const t = prompt('Song title', song.title); if (t) { song.title = t.trim(); await db.put(song); renderLibrary(); } } },
+      { icon: 'ic-chord', label: 'Noten anzeigen (Partitur, PDF, MusicXML)', run: () => (location.hash = '#/score/' + encodeURIComponent(song.id)) },
       { icon: 'ic-export', label: 'Export MIDI', run: async () => (await import('./midi.js')).exportMidi(song) },
       ...(song.audio || song.audioHash ? [{ icon: 'ic-note', label: 'Re-transcribe (other settings)', run: () => retranscribe(song) }] : []),
       { label: 'Delete', danger: true, run: async () => { if (confirm(`Delete “${song.title}”?`)) { await db.del(song.id); renderLibrary(); } } },
@@ -1259,6 +1262,70 @@ async function showResult(res) {
 }
 $('#resAgain').onclick = () => { $('#resultModal').classList.add('hidden'); currentPlayer.restart(); currentPlayer.play(); };
 $('#resLib').onclick = () => (location.hash = '#/library');
+
+// ---------------- sheet music (audio → notation) ----------------
+const OSMD = 'https://cdn.jsdelivr.net/npm/opensheetmusicdisplay@2.3.1/build/opensheetmusicdisplay.min.js';
+let scoreSong = null, scoreA = null, osmd = null;
+function loadOsmd() {
+  if (window.opensheetmusicdisplay) return Promise.resolve(window.opensheetmusicdisplay);
+  return new Promise((res, rej) => {
+    const s = document.createElement('script');
+    s.src = OSMD;
+    s.onload = () => res(window.opensheetmusicdisplay);
+    s.onerror = () => rej(new Error('Noten-Bibliothek konnte nicht geladen werden (offline?)'));
+    document.head.appendChild(s);
+  });
+}
+const scoreNotes = () => simplify(scoreSong.notes, $('#scLevel').value);
+function scoreXml() { return toMusicXML(scoreNotes(), scoreA, scoreSong.title); }
+async function renderScore() {
+  const box = $('#scoreBox');
+  $('#scBpm').value = scoreA.bpm;
+  $('#scBeats').value = scoreA.beats;
+  $('#scKey').value = `${scoreA.key.fifths}:${scoreA.key.mode}`;
+  $('#scoreInfo').textContent = ` · ${scoreA.key.name || ''} · ${scoreA.beats}/4 · ${scoreA.bpm} BPM`;
+  try {
+    const lib = await loadOsmd();
+    if (!osmd) { box.innerHTML = ''; osmd = new lib.OpenSheetMusicDisplay(box, { autoResize: true, backend: 'svg', drawTitle: true, drawComposer: true, drawingParameters: 'compacttight' }); }
+    await osmd.load(scoreXml());
+    osmd.render();
+  } catch (e) { console.error(e); box.innerHTML = `<p class="muted">Notenblatt konnte nicht dargestellt werden: ${esc(e.message)}. MusicXML-Export funktioniert trotzdem.</p>`; }
+}
+async function openScore(id) {
+  const song = await db.get(id);
+  if (!song || song.deleted) { toast('Song nicht gefunden'); location.hash = '#/library'; return; }
+  show('score');
+  scoreSong = song;
+  $('#scoreTitle').textContent = song.title;
+  $('#scLevel').value = settings.difficulty;
+  // built-in songs know their tempo; transcriptions get tempo, metre and key detected; user edits are remembered
+  scoreA = song.score || analyze(song.notes, { bpm: song.bpm });
+  renderScore();
+}
+function saveScoreSettings() { scoreSong.score = scoreA; db.put(scoreSong); renderScore(); }
+$('#scBpm').onchange = (e) => { scoreA = { ...scoreA, bpm: Math.max(30, Math.min(260, +e.target.value || 100)) }; saveScoreSettings(); };
+$('#scBeats').onchange = (e) => { scoreA = { ...scoreA, beats: +e.target.value }; saveScoreSettings(); };
+$('#scKey').onchange = (e) => {
+  const [fifths, mode] = e.target.value.split(':');
+  scoreA = { ...scoreA, key: { ...scoreA.key, fifths: +fifths, mode, name: e.target.selectedOptions[0].textContent } };
+  saveScoreSettings();
+};
+$('#scLevel').onchange = () => renderScore();
+$('#scAuto').onclick = () => { scoreA = analyze(scoreSong.notes, { bpm: scoreSong.bpm }); delete scoreSong.score; db.put(scoreSong); renderScore(); toast('Tempo, Takt und Tonart neu erkannt'); };
+const download = (data, name, type) => {
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob([data], { type }));
+  a.download = name;
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(a.href), 5000);
+};
+const safeName = () => scoreSong.title.replace(/[^\w\- äöüÄÖÜß]+/g, '').trim() || 'noten';
+$('#scXml').onclick = () => download(scoreXml(), safeName() + '.musicxml', 'application/vnd.recordare.musicxml+xml');
+$('#scMidi').onclick = async () => (await import('./midi.js')).exportMidi({ ...scoreSong, notes: scoreNotes() });
+$('#scPrint').onclick = () => window.print();
+$('#scoreBack').onclick = () => history.length > 1 ? history.back() : (location.hash = '#/library');
+$('#scorePlay').onclick = () => (location.hash = '#/play/' + encodeURIComponent(scoreSong.id));
+$('#sheetBtn').onclick = () => { if (currentSong) location.hash = '#/score/' + encodeURIComponent(currentSong.id); };
 
 // ---------------- account & sync ----------------
 function renderAccount(state) {

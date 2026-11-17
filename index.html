@@ -84,6 +84,28 @@
     </div>
   </section>
 
+  <!-- ================= SHEET MUSIC ================= -->
+  <section id="view-score" class="view hidden">
+    <header class="score-bar">
+      <button id="scoreBack" class="round ghost" aria-label="Zurück"><svg viewBox="0 0 24 24"><path d="M19 12H5M11 6l-6 6 6 6"/></svg></button>
+      <div class="score-title"><b id="scoreTitle"></b><span id="scoreInfo" class="muted small"></span></div>
+      <button id="scorePlay" class="btn small-btn2"><img class="ic" src="icons/ic-keyboard.webp" alt="" draggable="false"> Spielen</button>
+    </header>
+    <div class="score-tools">
+      <label>Tempo <input id="scBpm" type="number" min="30" max="260" step="1" /></label>
+      <label>Takt <select id="scBeats"><option value="2">2/4</option><option value="3">3/4</option><option value="4">4/4</option><option value="6">6/4</option></select></label>
+      <label>Tonart <select id="scKey"><option value="-7:major">C♭-Dur</option><option value="-7:minor">a♭-Moll</option><option value="-6:major">G♭-Dur</option><option value="-6:minor">e♭-Moll</option><option value="-5:major">D♭-Dur</option><option value="-5:minor">b-Moll</option><option value="-4:major">A♭-Dur</option><option value="-4:minor">f-Moll</option><option value="-3:major">E♭-Dur</option><option value="-3:minor">c-Moll</option><option value="-2:major">B♭-Dur</option><option value="-2:minor">g-Moll</option><option value="-1:major">F-Dur</option><option value="-1:minor">d-Moll</option><option value="0:major">C-Dur</option><option value="0:minor">a-Moll</option><option value="1:major">G-Dur</option><option value="1:minor">e-Moll</option><option value="2:major">D-Dur</option><option value="2:minor">h-Moll</option><option value="3:major">A-Dur</option><option value="3:minor">f♯-Moll</option><option value="4:major">E-Dur</option><option value="4:minor">c♯-Moll</option><option value="5:major">H-Dur</option><option value="5:minor">g♯-Moll</option><option value="6:major">F♯-Dur</option><option value="6:minor">d♯-Moll</option><option value="7:major">C♯-Dur</option><option value="7:minor">a♯-Moll</option></select></label>
+      <label>Level <select id="scLevel"><option value="easy">Leicht</option><option value="medium">Mittel</option><option value="hard">Schwer</option><option value="original">Original</option></select></label>
+      <button id="scAuto" class="link small">Automatisch erkennen</button>
+    </div>
+    <div class="score-tools">
+      <button id="scXml" class="btn"><img class="ic" src="icons/ic-export.webp" alt="" draggable="false"> MusicXML</button>
+      <button id="scMidi" class="btn"><img class="ic" src="icons/ic-export.webp" alt="" draggable="false"> MIDI</button>
+      <button id="scPrint" class="btn"><img class="ic" src="icons/ic-export.webp" alt="" draggable="false"> PDF / Drucken</button>
+    </div>
+    <div id="scoreBox" class="score-box"><p class="muted">Noten werden gesetzt …</p></div>
+  </section>
+
   <!-- ================= PLAYER ================= -->
   <section id="view-player" class="view hidden">
     <canvas id="stage"></canvas>
@@ -102,6 +124,7 @@
       <div class="hud-right">
         <span id="scoreChip" class="glass pill score">0 ✓</span>
         <button id="practiceBtn" class="glass pill" aria-label="Practice"><img class="ic" src="icons/ic-practice.webp" alt="" draggable="false"> Practice</button>
+        <button id="sheetBtn" class="glass icon" aria-label="Noten" title="Noten anzeigen"><img class="ic" src="icons/ic-chord.webp" alt="" draggable="false"></button>
         <button id="soundBtn" class="glass icon" aria-label="Sound"><img class="ic lg" src="icons/ic-sound.webp" alt="" draggable="false"></button>
         <button id="inputBtn" class="glass icon" aria-label="Input"><svg viewBox="0 0 24 24"><rect x="2" y="7" width="20" height="11" rx="2"/><path d="M6 7v6M10 7v6M14 7v6M18 7v6"/></svg></button>
         <div id="handSeg" class="seg glass hand-seg" role="radiogroup" aria-label="Hände">
