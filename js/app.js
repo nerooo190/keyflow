@@ -31,6 +31,16 @@ const saveSettings = (fromSync = false) => {
 piano.volume = settings.volume;
 
 // ---------------- helpers ----------------
+/** Android/Chrome: a picked file becomes unreadable once its <input> is reset (or after a while).
+ *  Copy the bytes into memory right away, then it is safe to reset the input. */
+async function snapshotFiles(list) {
+  return Promise.all([...list].map(async (f) => {
+    const copy = new File([await f.arrayBuffer()], f.name, { type: f.type, lastModified: f.lastModified });
+    if (f.webkitRelativePath) Object.defineProperty(copy, 'webkitRelativePath', { value: f.webkitRelativePath });
+    return copy;
+  }));
+}
+
 function toast(msg, ms = 2800, icon = null) {
   const t = $('#toast');
   t.innerHTML = (icon ? ic(icon) : '') + esc(msg);
@@ -161,9 +171,11 @@ async function renderCreate() {
   refreshAi();
 }
 
+let warmed = false;
 async function refreshAi() {
   if (STATIC) { aiState = { static: true }; return renderAiBar(); }
   aiState = await ai.status();
+  if (aiState.model && !warmed) { warmed = true; fetch('/api/ai/warm', { method: 'POST' }).catch(() => {}); }
   renderAiBar();
   if (aiState.pull?.active && !pullTimer) pullTimer = setInterval(async () => {
     aiState = await ai.status();
@@ -218,6 +230,9 @@ function renderChat() {
       <div class="quick">${QUICK.map((q) => `<button class="chip" data-quick="${esc(q[1])}">${ic(q[0])}${esc(q[1])}</button>`).join('')}</div>`;
   }
   html += ai.history.map(bubble).join('');
+  if (ai.history.length && ai.history[ai.history.length - 1].role === 'user' && !aiBusy) {
+    html += `<div class="bubble ai"><span class="muted small">Keine Antwort erhalten.</span> <button class="link small" data-retry="1">Antwort holen ↻</button></div>`;
+  }
   const hits = activeGenre ? searchCatalog('', activeGenre) : [];
   if (hits.length) {
     html += `<p class="muted small">Sofort spielbar (${esc(activeGenre)}):</p>` + hits.map((x) => `<div class="result" data-builtin="${x.id}"><span class="cover" style="${coverStyle(x.id)}"></span><div><div>${esc(x.title)}</div><div class="muted small">${x.genre} · ready to play</div></div></div>`).join('');
@@ -251,6 +266,9 @@ async function sendChat(text) {
   box.insertAdjacentHTML('beforeend', `<div class="bubble me">${esc(text)}</div><div class="bubble ai typing" id="liveBubble"><span class="dots"><i></i><i></i><i></i></span></div>`);
   box.scrollTop = box.scrollHeight;
   const live = $('#liveBubble');
+  const slow = setTimeout(() => {
+    if (live.classList.contains('typing')) live.insertAdjacentHTML('beforeend', '<div class="muted small">Coach lädt das Modell … beim ersten Mal kann das bis zu 1 Minute dauern.</div>');
+  }, 4000);
   try {
     await (STATIC ? (t, c, f) => ai.askBrowser(t, c, f, SYSTEM_PROMPT) : ai.ask)(text, aiContext(), (full) => {
       live.classList.remove('typing');
@@ -262,6 +280,7 @@ async function sendChat(text) {
     live.innerHTML = err.code === 'no-model' ? 'Bitte zuerst oben ein KI-Modell laden.' : err.code === 'no-ollama' ? 'Ollama läuft nicht – Server neu starten.' : 'Fehler: ' + esc(err.message);
     refreshAi();
   } finally {
+    clearTimeout(slow);
     aiBusy = false;
   }
   renderChat();
@@ -288,6 +307,7 @@ $('#createResults').onclick = (e) => {
   if (b) return addBuiltin(b.dataset.builtin);
   const l = e.target.closest('[data-learn]');
   if (l) return learn(l.dataset.learn);
+  if (e.target.closest('[data-retry]')) { const t = ai.popUnanswered(); if (t) sendChat(t); return; }
   const q = e.target.closest('[data-quick]');
   if (q) return sendChat(q.dataset.quick);
 };
@@ -327,8 +347,10 @@ $('#plusMenu').onclick = (e) => {
 };
 $('#recBtn').onclick = () => recordAndTranscribe();
 $('#fileInput').onchange = async (e) => {
-  const f = e.target.files[0];
-  e.target.value = '';
+  let f;
+  try { [f] = await snapshotFiles([...e.target.files].slice(0, 1)); }
+  catch { return toast('Datei konnte nicht gelesen werden – bitte direkt aus dem Speicher (nicht aus „Zuletzt verwendet“) wählen.', 6000); }
+  finally { e.target.value = ''; }
   if (f) handleFile(f);
 };
 $('#askForm').onsubmit = async (e) => {
@@ -831,14 +853,22 @@ async function doImport(files) {
   }
   renderSoundPanel();
 }
-$('#sndFile').onchange = (e) => { doImport(e.target.files); e.target.value = ''; };
-$('#sndDir').onchange = (e) => { doImport(e.target.files); e.target.value = ''; };
+const importPicked = async (e) => {
+  busy('Lese Dateien …');
+  let files;
+  try { files = await snapshotFiles(e.target.files); } catch (err) { unbusy(); return toast('Dateien konnten nicht gelesen werden: ' + err.message, 6000); }
+  finally { e.target.value = ''; }
+  doImport(files);
+};
+$('#sndFile').onchange = importPicked;
+$('#sndDir').onchange = importPicked;
 // ---------- custom .syx preset import ----------
 let picked = [];
 $('#sndImportSyx').onclick = () => $('#syxFile').click();
 $('#syxFile').onchange = async (e) => {
-  const files = [...e.target.files];
-  e.target.value = '';
+  let files;
+  try { files = await snapshotFiles(e.target.files); } catch (err) { return toast('Datei konnte nicht gelesen werden: ' + err.message, 6000); }
+  finally { e.target.value = ''; }
   if (!files.length) return;
   try {
     busy('Lese .syx-Presets …');
@@ -1421,8 +1451,9 @@ $('#accAuto').onchange = async (e) => {
 };
 $('#accRestore').onclick = () => $('#accRestoreFile').click();
 $('#accRestoreFile').onchange = async (e) => {
-  const f = e.target.files[0];
-  e.target.value = '';
+  let f;
+  try { [f] = await snapshotFiles([...e.target.files].slice(0, 1)); } catch (err) { return toast('Datei konnte nicht gelesen werden: ' + err.message, 6000); }
+  finally { e.target.value = ''; }
   if (!f || !confirm(`Sicherung „${f.name}“ in dein Konto übernehmen? Neuere Daten im Konto bleiben erhalten.`)) return;
   try {
     busy('Stelle Sicherung wieder her …');

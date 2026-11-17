@@ -7,6 +7,14 @@ const save = () => { localStorage.setItem(KEY, JSON.stringify(history.slice(-40)
 /** Replace the chat (used when the account sync brings a newer chat). */
 export function setHistory(h) { history = Array.isArray(h) ? h.slice(-40) : []; localStorage.setItem(KEY, JSON.stringify(history)); }
 
+/** Remove a trailing unanswered question and return its text (for "retry"). */
+export function popUnanswered() {
+  const last = history[history.length - 1];
+  if (!last || last.role !== 'user') return null;
+  history.pop(); save();
+  return last.content;
+}
+
 export function clearChat() { history = []; save(); }
 
 export async function status() {
