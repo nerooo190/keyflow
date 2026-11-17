@@ -368,6 +368,12 @@ const transcribeOpts = () => ({
   msSize: $('#optMsSize').value,
   quantize: $('#optQuantize').checked,
 });
+let lastModel = $('#optModel').value;
+$('#optModel').addEventListener('change', (e) => {
+  // Songscription has no API: open it and switch back to the previous in-app model
+  if (e.target.value === 'songscription') { e.target.value = lastModel; openSongscription(); return; }
+  lastModel = e.target.value;
+});
 $('#optModel').addEventListener('change', () => {
   const ms = $('#optModel').value === 'muscriptor';
   $('#msRow').classList.toggle('hidden', !ms);
