@@ -7,6 +7,8 @@
   <title>Keyflow – Piano tutorials for any song</title>
   <link rel="manifest" href="manifest.webmanifest" />
   <link rel="icon" href="icon.svg" type="image/svg+xml" />
+  <link rel="apple-touch-icon" href="icons/app/apple-touch-icon.png" />
+  <meta name="mobile-web-app-capable" content="yes" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
   <link rel="stylesheet" href="css/style.css" />
@@ -62,7 +64,8 @@
       </form>
       <div id="plusMenu" class="menu up hidden">
         <button data-act="audio"><img class="ic" src="icons/ic-note.webp" alt="" draggable="false"> Upload audio or video</button>
-        <button data-act="midi"><img class="ic" src="icons/ic-keyboard.webp" alt="" draggable="false"> Import MIDI file</button>
+        <button data-act="midi"><img class="ic" src="icons/ic-keyboard.webp" alt="" draggable="false"> MIDI / MusicXML importieren</button>
+        <button data-act="songscription"><img class="ic" src="icons/ic-chord.webp" alt="" draggable="false"> Mit Songscription transkribieren</button>
         <button data-act="record"><img class="ic" src="icons/ic-mic.webp" alt="" draggable="false"> Record with microphone</button>
       </div>
       <details class="advanced">

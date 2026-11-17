@@ -316,7 +316,8 @@ $('#plusMenu').onclick = (e) => {
   if (!b) return;
   $('#plusMenu').classList.add('hidden');
   if (b.dataset.act === 'record') return recordAndTranscribe();
-  $('#fileInput').accept = b.dataset.act === 'midi' ? '.mid,.midi,audio/midi' : 'audio/*,video/*,.mp3,.wav,.m4a,.ogg,.flac,.webm,.mp4';
+  if (b.dataset.act === 'songscription') return openSongscription();
+  $('#fileInput').accept = b.dataset.act === 'midi' ? '.mid,.midi,audio/midi,.musicxml,.xml,.mxl' : 'audio/*,video/*,.mp3,.wav,.m4a,.ogg,.flac,.webm,.mp4';
   $('#fileInput').click();
 };
 $('#recBtn').onclick = () => recordAndTranscribe();
@@ -377,6 +378,12 @@ async function handleFile(file) {
   const title = file.name.replace(/\.[^.]+$/, '');
   try {
     const buf = await file.arrayBuffer();
+    if (/\.(musicxml|mxl|xml)$/i.test(file.name)) {
+      busy('Lese MusicXML …');
+      const { parseMusicXML } = await import('./musicxml.js');
+      const r = await parseMusicXML(buf, file.name);
+      return saveAndOpen({ title: r.title || title, notes: r.notes, duration: r.duration, bpm: r.bpm, source: 'musicxml' });
+    }
     if (/\.midi?$/i.test(file.name) || file.type.includes('midi')) {
       busy('Reading MIDI…');
       const { parseMidi } = await import('./midi.js');
@@ -389,6 +396,18 @@ async function handleFile(file) {
     unbusy();
     toast(err.message || 'Something went wrong');
   }
+}
+
+/** Songscription.ai has no public API → open it in a new tab; its MIDI/MusicXML export comes back via import. */
+function openSongscription() {
+  window.open('https://www.songscription.ai/new', '_blank', 'noopener');
+  sheet('Songscription → Keyflow', [
+    { icon: 'ic-import', label: 'Fertig? Exportierte MIDI-/MusicXML-Datei importieren', run: () => {
+      $('#fileInput').accept = '.mid,.midi,audio/midi,.musicxml,.xml,.mxl';
+      $('#fileInput').click();
+    } },
+  ]);
+  toast('Songscription ist geöffnet: Song transkribieren, als MIDI oder MusicXML herunterladen und hier importieren.', 7000, 'ic-chord');
 }
 
 const MODES = { piano: 'Piano arrangement', easy: 'Easy (melody + bass)', full: 'Full detail' };
@@ -1316,6 +1335,11 @@ sync.registerProfile({
   },
 });
 document.addEventListener('kf-profile', () => sync.profileChanged());
+
+// installable app + offline: register the service worker (https or localhost only)
+if ('serviceWorker' in navigator && (location.protocol === 'https:' || location.hostname === 'localhost')) {
+  navigator.serviceWorker.register('sw.js').catch((e) => console.warn('service worker', e));
+}
 
 // ---------------- boot ----------------
 (async () => {
