@@ -27,7 +27,27 @@ export function detectTempo(notes) {
       if (s > best.score) best = { score: s, bpm, phase: ph };
     }
   }
-  return { bpm: Math.round(best.bpm), phase: best.phase };
+  // correct the classic 3:2 confusions (e.g. a slow piece in half/quarter notes read as dotted rhythms):
+  // switch if clearly more onsets fall exactly on beats at 2/3 or 3/2 of the tempo
+  const onBeat = (bpm) => {
+    const beat = 60 / bpm;
+    let bestR = 0, bestPh = 0;
+    for (let k = 0; k < 24; k++) {
+      const ph = (k / 24) * beat;
+      let hit = 0, all = 0;
+      for (const o of on) { const x = (o.t - ph) / beat; all += o.w; if (Math.abs(x - Math.round(x)) < 0.1) hit += o.w; }
+      if (hit / all > bestR) { bestR = hit / all; bestPh = ph; }
+    }
+    return { r: bestR, ph: bestPh };
+  };
+  let pick = { bpm: best.bpm, phase: best.phase, r: onBeat(best.bpm).r };
+  for (const f of [2 / 3, 3 / 2]) {
+    const bpm = best.bpm * f;
+    if (bpm < 50 || bpm > 180) continue;
+    const c = onBeat(bpm);
+    if (c.r > pick.r + 0.15) pick = { bpm, phase: c.ph, r: c.r };
+  }
+  return { bpm: Math.round(pick.bpm), phase: pick.phase };
 }
 
 // Krumhansl–Kessler key profiles
@@ -101,21 +121,35 @@ const VALUES = [[16, 'whole', 0], [12, 'half', 1], [8, 'half', 0], [6, 'quarter'
 const splitValue = (len) => { const out = []; while (len > 0) { const v = VALUES.find(([u]) => u <= len); out.push(v); len -= v[0]; } return out; };
 const esc = (s) => String(s).replace(/[&<>]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]));
 
-/** Quantise one staff into events on the 16th grid: [{start, len, pitches:[{p,f}]}] (monophonic chords per onset). */
+/**
+ * Quantise one staff into two voices on the 16th grid: [{start, len, pitches:[{p,f}]}].
+ * Voice 1 carries the moving line/chords; notes that are held clearly longer while voice 1 moves on
+ * go to voice 2 (instead of being cut off), like in printed piano music.
+ */
 function quantStaff(notes, beatSec, phase) {
   const unit = beatSec / DIV;
-  const byStart = new Map();
-  for (const n of notes) {
-    const s = Math.max(0, Math.round((n.t - phase) / unit));
-    const len = Math.max(1, Math.round(n.d / unit));
-    if (!byStart.has(s)) byStart.set(s, { start: s, len, pitches: [] });
-    const ev = byStart.get(s);
+  const q = notes.map((n) => ({ s: Math.max(0, Math.round((n.t - phase) / unit)), len: Math.max(1, Math.round(n.d / unit)), p: n.p, f: n.f }))
+    .sort((x, y) => x.s - y.s || y.p - x.p);
+  const onsets = [...new Set(q.map((n) => n.s))].sort((x, y) => x - y);
+  const nextOnset = (s) => onsets.find((o) => o > s) ?? Infinity;
+  const v1 = new Map(), v2 = new Map();
+  let v2End = 0;
+  for (const n of q) {
+    const nxt = nextOnset(n.s);
+    const held = n.s + n.len > nxt + 1 && n.len >= 4; // sustains well past the next onset
+    const target = held && v2End <= n.s ? v2 : v1;
+    if (!target.has(n.s)) target.set(n.s, { start: n.s, len: n.len, pitches: [] });
+    const ev = target.get(n.s);
     if (!ev.pitches.some((x) => x.p === n.p)) ev.pitches.push({ p: n.p, f: n.f });
-    ev.len = Math.max(ev.len, len);
+    ev.len = target === v2 ? Math.max(ev.len, n.len) : ev.len;
+    if (target === v2) v2End = n.s + ev.len;
   }
-  const evs = [...byStart.values()].sort((a, b) => a.start - b.start);
-  for (let i = 0; i < evs.length - 1; i++) evs[i].len = Math.min(evs[i].len, evs[i + 1].start - evs[i].start); // one voice: no overlaps
-  return evs;
+  const finish = (m) => {
+    const evs = [...m.values()].sort((x, y) => x.start - y.start);
+    for (let i = 0; i < evs.length - 1; i++) evs[i].len = Math.max(1, Math.min(evs[i].len, evs[i + 1].start - evs[i].start));
+    return evs;
+  };
+  return [finish(v1), finish(v2)];
 }
 
 function pitchXml(p, flats) {
@@ -134,17 +168,16 @@ export function toMusicXML(notes, a, title = 'Keyflow') {
   const flats = a.key.fifths < 0;
   const barLen = a.beats * DIV;
   const staves = { 1: quantStaff(notes.filter((n) => n.h !== 'L'), beatSec, a.phase), 2: quantStaff(notes.filter((n) => n.h === 'L'), beatSec, a.phase) };
-  const end = Math.max(barLen, ...[1, 2].flatMap((s) => staves[s].map((e) => e.start + e.len)));
+  const end = Math.max(barLen, ...[1, 2].flatMap((s) => staves[s].flat().map((e) => e.start + e.len)));
   const bars = Math.ceil(end / barLen);
 
-  const staffXml = (staff, bar) => {
-    const voice = staff === 1 ? 1 : 5;
+  const voiceXml = (events, staff, voice, bar, hiddenRests) => {
     const b0 = bar * barLen, b1 = b0 + barLen;
     let pos = b0, xml = '';
     const rest = (len) => splitValue(len).forEach(([u, type, dot]) => {
-      xml += `<note><rest/><duration>${u}</duration><voice>${voice}</voice><type>${type}</type>${dot ? '<dot/>' : ''}<staff>${staff}</staff></note>`;
+      xml += `<note${hiddenRests ? ' print-object="no"' : ''}><rest/><duration>${u}</duration><voice>${voice}</voice><type>${type}</type>${dot ? '<dot/>' : ''}<staff>${staff}</staff></note>`;
     });
-    for (const ev of staves[staff]) {
+    for (const ev of events) {
       const s = ev.start, e = ev.start + ev.len;
       if (e <= b0 || s >= b1) continue;
       const from = Math.max(s, b0), to = Math.min(e, b1);
@@ -156,12 +189,22 @@ export function toMusicXML(notes, a, title = 'Keyflow') {
           const fing = pt.f && !tiedIn ? `<technical><fingering>${pt.f}</fingering></technical>` : '';
           const ties = (tiedIn ? '<tie type="stop"/>' : '') + (tiedOut ? '<tie type="start"/>' : '');
           const tied = (tiedIn ? '<tied type="stop"/>' : '') + (tiedOut ? '<tied type="start"/>' : '');
-          xml += `<note>${ci ? '<chord/>' : ''}${pitchXml(pt.p, flats)}<duration>${u}</duration>${ties}<voice>${voice}</voice><type>${type}</type>${dot ? '<dot/>' : ''}<staff>${staff}</staff>${tied || fing ? `<notations>${tied}${fing}</notations>` : ''}</note>`;
+          const stem = voice % 4 === 1 ? 'up' : 'down';
+          xml += `<note>${ci ? '<chord/>' : ''}${pitchXml(pt.p, flats)}<duration>${u}</duration>${ties}<voice>${voice}</voice><type>${type}</type>${dot ? '<dot/>' : ''}${hasV2[staff] ? `<stem>${stem}</stem>` : ''}<staff>${staff}</staff>${tied || fing ? `<notations>${tied}${fing}</notations>` : ''}</note>`;
         });
       });
       pos = to;
     }
     if (pos < b1) rest(b1 - pos);
+    return xml;
+  };
+  const hasV2 = { 1: staves[1][1].length > 0, 2: staves[2][1].length > 0 };
+  const inBar = (evs, bar) => evs.some((e) => e.start < (bar + 1) * barLen && e.start + e.len > bar * barLen);
+  const staffXml = (staff, bar) => {
+    const [v1, v2] = staves[staff];
+    const base = staff === 1 ? 1 : 5;
+    let xml = voiceXml(v1, staff, base, bar, false);
+    if (inBar(v2, bar)) xml += `<backup><duration>${barLen}</duration></backup>` + voiceXml(v2, staff, base + 1, bar, true);
     return xml;
   };
 

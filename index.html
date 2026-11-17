@@ -71,6 +71,7 @@
       <details class="advanced">
         <summary>Transcription settings</summary>
         <label>Note sensitivity <input id="optSens" type="range" min="0" max="1" step="0.05" value="0.5" /></label>
+        <div class="row btns"><button type="button" id="optMax" class="glass pill"><img class="ic" src="icons/ic-trophy.webp" alt="" draggable="false"> Höchste Genauigkeit</button></div>
         <label>AI model <select id="optModel"><option value="basicpitch">Basic Pitch (any instrument)</option><option value="piano">Piano model – Onsets &amp; Frames</option><option value="both" selected>Both combined (best)</option><option value="muscriptor">MuScriptor (multi-instrument, server)</option><option value="transkun">Transkun – Klavier, sehr genau (Server)</option><option value="songscription">Songscription.ai (Webseite → MIDI/MusicXML zurück)</option></select></label>
         <label id="msRow" class="hidden">MuScriptor size <select id="optMsSize"><option value="small" selected>small – fast (CPU ok)</option><option value="medium">medium – balanced</option><option value="large">large – best (GPU)</option></select></label>
         <label id="msQRow" class="hidden">Snap notes to beat grid <input id="optQuantize" type="checkbox" checked /></label>

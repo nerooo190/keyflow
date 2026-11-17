@@ -2,11 +2,11 @@
 //  • own files: network-first (always the newest version when online), cache as offline fallback
 //  • CDN libraries / samples (jsDelivr, esm.sh, tonejs): cache-first (versioned URLs never change)
 //  • never touches /api/*, Supabase or big AI model downloads (they have their own caches)
-const VERSION = 'keyflow-v2';
+const VERSION = 'keyflow-v3';
 const SHELL = ['./', 'index.html', 'css/style.css', 'manifest.webmanifest', 'icon.svg', 'icons/app/icon-192.png', 'icons/app/icon-512.png',
   'js/app.js', 'js/player.js', 'js/audio.js', 'js/util.js', 'js/db.js', 'js/songs.js', 'js/input.js', 'js/lights.js', 'js/fingering.js',
   'js/difficulty.js', 'js/sync.js', 'js/soundlib.js', 'js/assistant.js', 'js/coach-prompt.js', 'js/cloud-backend.js', 'js/cloud-config.js',
-  'js/dx7.js', 'js/fm-engine.js', 'js/fm-processor.js', 'js/sfz.js', 'js/sf-engine.js', 'js/midi.js', 'js/musicxml.js', 'js/score.js', 'js/transcribe.js', 'js/hpss.js'];
+  'js/dx7.js', 'js/fm-engine.js', 'js/fm-processor.js', 'js/sfz.js', 'js/sf-engine.js', 'js/midi.js', 'js/musicxml.js', 'js/score.js', 'js/compare.js', 'js/transcribe.js', 'js/hpss.js'];
 const CDN = /^https:\/\/(cdn\.jsdelivr\.net|esm\.sh|tonejs\.github\.io|fonts\.(googleapis|gstatic)\.com)\//;
 const SKIP = /\/api\/|supabase\.co|huggingface\.co|\.gguf|\.onnx/;
 

@@ -136,6 +136,7 @@ $('#songList').onclick = async (e) => {
     sheet(song.title, [
       { label: '▶  Play', run: () => (location.hash = '#/play/' + encodeURIComponent(song.id)) },
       { label: 'Rename', run: async () => { const t = prompt('Song title', song.title); if (t) { song.title = t.trim(); await db.put(song); renderLibrary(); } } },
+      { icon: 'ic-practice', label: 'Genauigkeit messen (mit Referenz-MIDI/MusicXML)', run: () => measureAccuracy(song) },
       { icon: 'ic-chord', label: 'Noten anzeigen (Partitur, PDF, MusicXML)', run: () => (location.hash = '#/score/' + encodeURIComponent(song.id)) },
       { icon: 'ic-export', label: 'Export MIDI', run: async () => (await import('./midi.js')).exportMidi(song) },
       ...(song.audio || song.audioHash ? [{ icon: 'ic-note', label: 'Re-transcribe (other settings)', run: () => retranscribe(song) }] : []),
@@ -311,6 +312,7 @@ $('#aiBar').onclick = async (e) => {
   }
   if (e.target.id === 'newChat') { ai.clearChat(); renderChat(); }
 };
+$('#optMax').onclick = applyMaxAccuracy;
 $('#createBack').onclick = () => (location.hash = '#/library');
 $('#skipBtn').onclick = () => (location.hash = '#/library');
 $('#plusBtn').onclick = (e) => { e.stopPropagation(); $('#plusMenu').classList.toggle('hidden'); };
@@ -361,6 +363,15 @@ async function handleSearch(q) {
 window.addEventListener('dragover', (e) => e.preventDefault());
 window.addEventListener('drop', (e) => { e.preventDefault(); const f = e.dataTransfer.files[0]; if (f) handleFile(f); });
 
+/** Preset: best possible accuracy (separation first, then the strongest available models together). */
+function applyMaxAccuracy() {
+  $('#optDemucs').checked = true;
+  $('#optMode').value = 'full';
+  const tk = $('#optModel option[value=transkun]');
+  $('#optModel').value = tk && !tk.disabled ? 'transkun' : 'both';
+  $('#optSens').value = 0.55;
+  toast(`Höchste Genauigkeit: Demucs + ${$('#optModel').value === 'transkun' ? 'Transkun' : 'Basic Pitch & Onsets-and-Frames kombiniert'} · volle Detailtiefe. Dauert länger.`, 6000, 'ic-trophy');
+}
 const transcribeOpts = () => ({
   sens: +$('#optSens').value,
   split: +$('#optSplit').value,
@@ -1262,6 +1273,35 @@ async function showResult(res) {
 }
 $('#resAgain').onclick = () => { $('#resultModal').classList.add('hidden'); currentPlayer.restart(); currentPlayer.play(); };
 $('#resLib').onclick = () => (location.hash = '#/library');
+
+// ---------------- accuracy against a reference (e.g. Songscription export) ----------------
+function measureAccuracy(song) {
+  const input = document.createElement('input');
+  input.type = 'file';
+  input.accept = '.mid,.midi,audio/midi,.musicxml,.xml,.mxl';
+  input.onchange = async () => {
+    const f = input.files[0];
+    if (!f) return;
+    try {
+      busy('Vergleiche Note für Note …');
+      const buf = await f.arrayBuffer();
+      const ref = /\.(musicxml|mxl|xml)$/i.test(f.name)
+        ? (await (await import('./musicxml.js')).parseMusicXML(buf, f.name)).notes
+        : (await (await import('./midi.js')).parseMidi(buf)).notes;
+      await new Promise((r) => setTimeout(r, 30));
+      const { compare } = await import('./compare.js');
+      const r = compare(song.notes, ref);
+      unbusy();
+      const pct = (x) => (x * 100).toFixed(1) + ' %';
+      sheet(`Genauigkeit: „${song.title}“ vs. ${f.name}`, [
+        { icon: 'ic-trophy', label: `Note-genau (F1): ${pct(r.f1)}  ·  ${r.matched} von ${r.ref} Referenz-Noten getroffen`, run() {} },
+        { label: `Precision ${pct(r.precision)} (wie viele Keyflow-Noten stimmen) · Recall ${pct(r.recall)} (wie viele Referenz-Noten gefunden)`, run() {} },
+        { label: `Ohne Oktavfehler: ${pct(r.pitchClassF1)} · Ø Timing-Abweichung ${r.meanOnsetErrorMs?.toFixed(0) ?? '–'} ms · Versatz ${r.offset.toFixed(2)} s, Tempo ×${r.scale.toFixed(3)}`, run() {} },
+      ]);
+    } catch (e) { unbusy(); toast('Vergleich fehlgeschlagen: ' + e.message, 6000); }
+  };
+  input.click();
+}
 
 // ---------------- sheet music (audio → notation) ----------------
 const OSMD = 'https://cdn.jsdelivr.net/npm/opensheetmusicdisplay@2.3.1/build/opensheetmusicdisplay.min.js';
